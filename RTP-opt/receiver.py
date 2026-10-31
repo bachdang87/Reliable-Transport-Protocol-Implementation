@@ -14,54 +14,44 @@ def receiver(receiver_ip, receiver_port, window_size):
     buffer = {}
     
     while True:
-        # Receive packet; address includes both IP and port
         pkt, address = s.recvfrom(2048)
 
         if len(pkt) < 16:
             continue
 
-        # Extract header and payload
         pkt_header = PacketHeader(pkt[:16])
         msg = pkt[16 : 16 + pkt_header.length]
 
-        # Verify checksum
         pkt_checksum = pkt_header.checksum
         pkt_header.checksum = 0
         computed_checksum = compute_checksum(pkt_header / msg)
         
-        # Nếu checksum không khớp, bỏ qua gói tin này
         if pkt_checksum != computed_checksum:
             continue
             
         seq_num = pkt_header.seq_num
         pkt_type = pkt_header.type
 
-        # Theo yêu cầu của RTP-opt: Drop tất cả các gói có seq_num >= N + window_size
         if seq_num >= expected_seq + window_size:
             continue
 
-        # Gửi Individual ACK với seq_num bằng đúng seq_num của gói dữ liệu vừa nhận được
         ack_hdr = PacketHeader(type=3, seq_num=seq_num, length=0)
         ack_hdr.checksum = compute_checksum(ack_hdr / b"")
         s.sendto(bytes(ack_hdr), address)
 
-        # Bỏ qua nếu gói tin đã được xử lý từ trước (nằm ngoài khoảng cần in)
         if seq_num < expected_seq:
             continue
 
-        # Đưa gói tin mới vào buffer nếu chưa có
         if seq_num not in buffer:
             buffer[seq_num] = (pkt_type, msg)
 
-        # Xử lý tuần tự các gói tin liên tiếp đã nằm trong buffer
         while expected_seq in buffer:
             cur_type, cur_msg = buffer.pop(expected_seq)
             
-            if cur_type == 2:  # Gói DATA
+            if cur_type == 2:  
                 sys.stdout.write(cur_msg.decode('utf-8'))
                 sys.stdout.flush()
-            elif cur_type == 1:  # Gói END
-                # An toàn thoát khỏi chương trình vì đã gửi ACK cho END ở bên trên
+            elif cur_type == 1:  
                 return
                 
             expected_seq += 1

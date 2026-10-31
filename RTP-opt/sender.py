@@ -8,18 +8,15 @@ from utils import PacketHeader, compute_checksum
 def sender(receiver_ip, receiver_port, window_size):
     """TODO: Open socket and send message from sys.stdin."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.settimeout(0.5)  # Timeout 500ms
+    s.settimeout(0.5)  
     
-    # Đọc dữ liệu đầu vào
     data = sys.stdin.read().encode('utf-8')
     packets = []
     
-    # 1. Gói START (type=0, seq_num=0)
     start_hdr = PacketHeader(type=0, seq_num=0, length=0)
     start_hdr.checksum = compute_checksum(start_hdr / b"")
     packets.append(start_hdr / b"")
     
-    # 2. Phân mảnh gói DATA (type=2)
     seq = 1
     MAX_PAYLOAD = 1456
     for i in range(0, len(data), MAX_PAYLOAD):
@@ -29,7 +26,6 @@ def sender(receiver_ip, receiver_port, window_size):
         packets.append(hdr / chunk)
         seq += 1
         
-    # 3. Gói END (type=1)
     end_hdr = PacketHeader(type=1, seq_num=seq, length=0)
     end_hdr.checksum = compute_checksum(end_hdr / b"")
     packets.append(end_hdr / b"")
@@ -38,11 +34,9 @@ def sender(receiver_ip, receiver_port, window_size):
     base = 0
     next_to_send = 0
     
-    # Mảng theo dõi trạng thái ACK của từng gói tin (Individual ACK)
     acked = [False] * total_packets
     
     while base < total_packets:
-        # Gửi các gói tin mới trong window
         while next_to_send < base + window_size and next_to_send < total_packets:
             s.sendto(bytes(packets[next_to_send]), (receiver_ip, receiver_port))
             next_to_send += 1
@@ -56,27 +50,22 @@ def sender(receiver_ip, receiver_port, window_size):
             expected_checksum = ack_hdr.checksum
             ack_hdr.checksum = 0
             
-            # Bỏ qua nếu checksum sai
             if expected_checksum != compute_checksum(ack_hdr / b""):
                 continue
                 
-            if ack_hdr.type == 3:  # Nếu là gói ACK
+            if ack_hdr.type == 3:  
                 ack_seq = ack_hdr.seq_num
                 
-                # Đánh dấu đã nhận ACK cho gói tin cụ thể này (Individual ACK)
                 if base <= ack_seq < total_packets:
                     acked[ack_seq] = True
                     
-                # Trượt window lên (advance base) nếu gói base đã được ACK
                 while base < total_packets and acked[base]:
                     base += 1
                     
         except socket.timeout:
-            # Sender có thể thoát nếu đã gửi END và có timeout sau 500ms
             if base == total_packets - 1:
                 break
                 
-            # Chỉ gửi lại những gói tin CHƯA được ACK trong window hiện tại
             for i in range(base, next_to_send):
                 if not acked[i]:
                     s.sendto(bytes(packets[i]), (receiver_ip, receiver_port))
